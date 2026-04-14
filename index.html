@@ -9,9 +9,20 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen">
 
-<div class="bg-white shadow-2xl rounded-2xl p-6 w-[420px]">
+<div class="bg-white shadow-2xl rounded-2xl p-6 w-[440px]">
 
 <h1 class="text-2xl font-bold text-center mb-4">💰 Goal Tracker</h1>
+
+<div class="flex gap-2 mb-4">
+<select id="currencySelect" class="border p-2 rounded w-full">
+<option value="$">USD ($)</option>
+<option value="₹">INR (₹)</option>
+<option value="€">EUR (€)</option>
+<option value="£">GBP (£)</option>
+<option value="BTC">BTC</option>
+<option value="ETH">ETH</option>
+</select>
+</div>
 
 <div class="flex gap-2 mb-4">
 <input id="goalInput" type="number" placeholder="Set new goal" class="border p-2 rounded w-full">
@@ -35,14 +46,24 @@
 </div>
 
 <div class="flex gap-2 mb-4">
-<button onclick="resetData()" class="bg-blue-500 text-white px-3 py-2 rounded w-full">🔄 Reset Data</button>
-<button onclick="downloadPDF()" class="bg-purple-500 text-white px-3 py-2 rounded w-full">📄 Download PDF</button>
+<button onclick="resetData()" class="bg-blue-500 text-white px-3 py-2 rounded w-full">🔄 Reset</button>
+<button onclick="downloadPDF()" class="bg-purple-500 text-white px-3 py-2 rounded w-full">📄 PDF</button>
+</div>
+
+<div class="flex gap-2 mb-4">
+<input id="saveName" type="text" placeholder="Save name" class="border p-2 rounded w-full">
+<button onclick="saveTracker()" class="bg-black text-white px-3 rounded">💾 Save</button>
+</div>
+
+<div class="mb-4">
+<h2 class="font-semibold mb-2">📂 Saved Data</h2>
+<ul id="savedList" class="space-y-2"></ul>
 </div>
 
 <table class="w-full text-sm text-left">
 <thead>
 <tr class="border-b">
-<th class="py-2">📅 Date</th>
+<th class="py-2">📅 Date & Time</th>
 <th class="py-2">💵 Change</th>
 <th class="py-2">📊 Total</th>
 </tr>
@@ -53,121 +74,158 @@
 </div>
 
 <script>
-let goal = parseFloat(localStorage.getItem('goal')) || 215;
+let goal = 0;
+let currency = '$';
+let data = { total: 0, history: [] };
+let currentIndex = null;
 
-let data = JSON.parse(localStorage.getItem('trackerData')) || {
- total: 20,
- history: []
-};
+let savedTrackers = JSON.parse(localStorage.getItem('savedTrackers')) || [];
+
+function persistSaved(){
+ localStorage.setItem('savedTrackers', JSON.stringify(savedTrackers));
+}
 
 function saveData() {
  localStorage.setItem('trackerData', JSON.stringify(data));
  localStorage.setItem('goal', goal);
+ localStorage.setItem('currency', currency);
+ if(currentIndex !== null){
+  savedTrackers[currentIndex] = {
+   name: savedTrackers[currentIndex].name,
+   data: JSON.parse(JSON.stringify(data)),
+   goal,
+   currency
+  };
+  persistSaved();
+ }
 }
 
 function updateUI() {
- let percent = Math.max(0, Math.min(100, (data.total / goal) * 100));
+ let percent = goal > 0 ? Math.min(100, (data.total / goal) * 100) : 0;
  document.getElementById('progressBar').style.width = percent + '%';
- document.getElementById('progressText').innerText = `$${data.total} / $${goal}`;
+ document.getElementById('progressText').innerText = `${currency}${data.total} / ${currency}${goal}`;
 }
 
 function renderTable() {
  let table = document.getElementById('tableBody');
  table.innerHTML = '';
-
  data.history.forEach(entry => {
   let row = document.createElement('tr');
-  row.classList.add('border-b');
-
   row.innerHTML = `
-  <td class="py-2">${entry.date}</td>
-  <td class="py-2 ${entry.amount < 0 ? 'text-red-500' : 'text-green-600'}">${entry.amount < 0 ? '-' : '+'}$${Math.abs(entry.amount)}</td>
-  <td class="py-2">$${entry.total}</td>
+  <td class="py-2">${entry.datetime}</td>
+  <td class="py-2 ${entry.amount < 0 ? 'text-red-500' : 'text-green-600'}">${entry.amount < 0 ? '-' : '+'}${currency}${Math.abs(entry.amount)}</td>
+  <td class="py-2">${currency}${entry.total}</td>
   `;
-
   table.appendChild(row);
  });
 }
 
+function renderSaved() {
+ let list = document.getElementById('savedList');
+ list.innerHTML = '';
+ savedTrackers.forEach((item, index) => {
+  let li = document.createElement('li');
+  li.className = 'flex justify-between bg-gray-100 p-2 rounded';
+  li.innerHTML = `
+  <span>${item.name}</span>
+  <div class="flex gap-2">
+  <button onclick="loadTracker(${index})" class="bg-green-500 text-white px-2 rounded">Open</button>
+  <button onclick="deleteTracker(${index})" class="bg-red-500 text-white px-2 rounded">X</button>
+  </div>
+  `;
+  list.appendChild(li);
+ });
+}
+
+function getDateTime() {
+ return new Date().toLocaleString();
+}
+
 function addMoney() {
- let input = document.getElementById('amountInput');
- let amount = parseFloat(input.value);
+ let amount = parseFloat(document.getElementById('amountInput').value);
  if (!amount || amount <= 0) return;
-
  data.total += amount;
-
- let entry = {
-  date: new Date().toLocaleDateString(),
-  amount: amount,
-  total: data.total
- };
-
- data.history.push(entry);
- saveData();
- updateUI();
- renderTable();
- input.value = '';
+ data.history.push({ datetime: getDateTime(), amount: amount, total: data.total });
+ saveData(); updateUI(); renderTable();
+ document.getElementById('amountInput').value = '';
 }
 
 function deductMoney() {
- let input = document.getElementById('amountInput');
- let amount = parseFloat(input.value);
+ let amount = parseFloat(document.getElementById('amountInput').value);
  if (!amount || amount <= 0) return;
-
  data.total -= amount;
-
- let entry = {
-  date: new Date().toLocaleDateString(),
-  amount: -amount,
-  total: data.total
- };
-
- data.history.push(entry);
- saveData();
- updateUI();
- renderTable();
- input.value = '';
+ data.history.push({ datetime: getDateTime(), amount: -amount, total: data.total });
+ saveData(); updateUI(); renderTable();
+ document.getElementById('amountInput').value = '';
 }
 
 function resetData() {
- data = { total: 20, history: [] };
- saveData();
- updateUI();
- renderTable();
+ data = { total: 0, history: [] };
+ saveData(); updateUI(); renderTable();
 }
 
 function resetGoal() {
- let input = document.getElementById('goalInput');
- let newGoal = parseFloat(input.value);
+ let newGoal = parseFloat(document.getElementById('goalInput').value);
  if (!newGoal || newGoal <= 0) return;
-
  goal = newGoal;
+ saveData(); updateUI();
+ document.getElementById('goalInput').value = '';
+}
+
+function saveTracker() {
+ let name = document.getElementById('saveName').value;
+ if (!name) return;
+ savedTrackers.push({
+  name,
+  data: JSON.parse(JSON.stringify(data)),
+  goal,
+  currency
+ });
+ persistSaved();
+ renderSaved();
+ document.getElementById('saveName').value = '';
+}
+
+function loadTracker(index) {
+ let item = savedTrackers[index];
+ currentIndex = index;
+ data = JSON.parse(JSON.stringify(item.data));
+ goal = item.goal;
+ currency = item.currency;
  saveData();
- updateUI();
- input.value = '';
+ updateUI(); renderTable();
+}
+
+function deleteTracker(index) {
+ savedTrackers.splice(index, 1);
+ persistSaved();
+ if(currentIndex === index) currentIndex = null;
+ renderSaved();
 }
 
 function downloadPDF() {
  const { jsPDF } = window.jspdf;
  const doc = new jsPDF();
-
- doc.setFontSize(16);
- doc.text("Money Tracker Report", 20, 20);
-
- doc.setFontSize(12);
- doc.text(`Total: $${data.total} / $${goal}`, 20, 30);
-
- let y = 40;
- data.history.forEach((entry, index) => {
-  doc.text(`${index + 1}. ${entry.date} | ${entry.amount > 0 ? '+' : ''}${entry.amount} | Total: ${entry.total}`, 20, y);
-  y += 8;
+ doc.text(`Total: ${currency}${data.total} / ${currency}${goal}`, 20, 20);
+ let y = 30;
+ data.history.forEach((e,i)=>{
+  doc.text(`${i+1}. ${e.datetime} | ${e.amount} | ${e.total}`,20,y);
+  y+=8;
  });
-
- doc.save("tracker_report.pdf");
+ doc.save('tracker.pdf');
 }
 
-updateUI();
-renderTable();
+function init(){
+ let saved = localStorage.getItem('trackerData');
+ if(saved){data = JSON.parse(saved)}
+ goal = parseFloat(localStorage.getItem('goal'))||0;
+ currency = localStorage.getItem('currency')||'$';
+ document.getElementById('currencySelect').value = currency;
+ document.getElementById('currencySelect').onchange=e=>{currency=e.target.value;saveData();updateUI();renderTable();};
+ updateUI(); renderTable(); renderSaved();
+}
+
+init();
 </script>
 
 </body>
